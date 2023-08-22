@@ -1,13 +1,31 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "platform.h"
 
 #include "util.h"
 #include "net.h"
+#include "ip.h"
+
+struct net_protocol
+{
+    struct net_protocol *next;
+    uint16_t type;
+    struct queue_head queue;
+    void (*handler)(const uint8_t *data, size_t len, struct net_device *dev);
+};
+
+struct net_protocol_queue_entry
+{
+    struct net_device *dev;
+    size_t len;
+    uint8_t data[];
+};
 
 static struct net_device *devices;
+static struct net_protocol *protocols;
 
 struct net_device *net_device_alloc(void)
 {
@@ -102,7 +120,7 @@ int net_device_output(struct net_device *dev, uint16_t type, const void *data, s
 
     debugf("dev=%s, type=0x%04x, len=%zu", dev->name, type, len);
     debugdump(data, len);
-    if (dev->ops->transmit(dev, 0, data, len, dst) != 0)
+    if (dev->ops->transmit(dev, type, data, len, dst) != 0)
     {
         errorf("transmit() failed, dev=%s, len=%zu", dev->name, len);
         return -1;
@@ -111,10 +129,101 @@ int net_device_output(struct net_device *dev, uint16_t type, const void *data, s
     return 0;
 }
 
+int net_protocol_register(uint16_t type, void (*handler)(const uint8_t *data, size_t len, struct net_device *dev))
+{
+    struct net_protocol *proto;
+
+    for (proto = protocols; proto; proto = proto->next)
+    {
+        if (proto->type == type)
+        {
+            errorf("protocol is already registered, type=0x%04x", type);
+            return -1;
+        }
+    }
+
+    proto = memory_alloc(sizeof(*proto));
+    if (proto == NULL)
+    {
+        errorf("memory_alloc() failed");
+        return -1;
+    }
+
+    proto->type = type;
+    proto->handler = handler;
+    queue_init(&proto->queue);
+
+    proto->next = protocols;
+    protocols = proto;
+    infof("registered, type=0x%04x", type);
+
+    return 0;
+}
+
 int net_input_handler(uint16_t type, const uint8_t *data, size_t len, struct net_device *dev)
 {
     debugf("dev=%s, type=0x%04x, len=%zu", dev->name, type, len);
     debugdump(data, len);
+
+    struct net_protocol *proto;
+    struct net_protocol_queue_entry *entry;
+
+    for (proto = protocols; proto; proto = proto->next)
+    {
+        if (proto->type == type)
+        {
+            entry = memory_alloc(sizeof(*entry) + len);
+            if (entry == NULL)
+            {
+                errorf("memory_alloc() failed");
+                return -1;
+            }
+
+            entry->dev = dev;
+            entry->len = len;
+            memcpy(entry->data, data, len);
+
+            if (queue_push(&proto->queue, entry) == NULL)
+            {
+                errorf("queue_push() failed");
+                return -1;
+            }
+
+            debugf("queue pushed (num=%u), type=0x%04x, len=%zu", proto->queue.num, type, len);
+            debugdump(data, len);
+
+            intr_raise_irq(INTR_IRQ_SOFTIRQ);
+
+            return 0;
+        }
+    }
+
+    // unsupported protocol
+    return 0;
+}
+
+int net_softirq_handler(void)
+{
+    struct net_protocol *proto;
+    struct net_protocol_queue_entry *entry;
+
+    for (proto = protocols; proto; proto = proto->next)
+    {
+        while (1)
+        {
+            entry = queue_pop(&proto->queue);
+            if (!entry)
+            {
+                break;
+            }
+
+            debugf("queue poped (num:%u), dev=%s, type=0x%04x, len=%zu", proto->queue.num, entry->dev->name, proto->type, entry->len);
+            debugdump(entry->data, entry->len);
+
+            proto->handler(entry->data, entry->len, entry->dev);
+            memory_free(entry);
+        }
+    }
 
     return 0;
 }
@@ -159,6 +268,12 @@ int net_init(void)
     if (intr_init() == -1)
     {
         errorf("intr_init() failed");
+        return -1;
+    }
+
+    if (ip_init() == -1)
+    {
+        errorf("ip_init() failed.");
         return -1;
     }
 
