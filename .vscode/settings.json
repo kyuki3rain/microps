@@ -1,6 +1,11 @@
 {
     "files.associations": {
         "typeinfo": "c",
-        "net.h": "c"
-    }
+        "net.h": "c",
+        "signal.h": "c",
+        "type_traits": "c",
+        "platform.h": "c",
+        "pthread.h": "c",
+        "pthreadtypes.h": "c"
+    },
 }
