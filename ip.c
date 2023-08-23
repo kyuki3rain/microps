@@ -58,7 +58,7 @@ int ip_addr_pton(const char *p, ip_addr_t *n)
 // 文字列をIPアドレスに変換する
 char *ip_addr_ntop(const ip_addr_t *n, char *p, size_t size)
 {
-    uint8_t *u8 = (uint8_t *)&n;
+    uint8_t *u8 = (uint8_t *)n;
     snprintf(p, size, "%d.%d.%d.%d", u8[0], u8[1], u8[2], u8[3]);
     return p;
 }
@@ -84,7 +84,7 @@ static void ip_dump(const uint8_t *data, size_t len)
     total_len = ntoh16(hdr->total_length);
     fprintf(stderr, "       total_length: %u (payload: %u)\n", total_len, total_len - hdr_len);
 
-    fprintf(stderr, "                 id: 0x%04x\n", ntoh16(hdr->id));
+    fprintf(stderr, "                 id: %u\n", ntoh16(hdr->id));
 
     offset = ntoh16(hdr->flags_fragment_offset);
     flags = (offset & 0xe000) >> 13;
