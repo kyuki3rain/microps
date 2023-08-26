@@ -8,6 +8,7 @@
 #include "util.h"
 #include "net.h"
 #include "ip.h"
+#include "icmp.h"
 
 struct net_protocol
 {
@@ -310,6 +311,12 @@ int net_init(void)
     if (ip_init() == -1)
     {
         errorf("ip_init() failed.");
+        return -1;
+    }
+
+    if (icmp_init() == -1)
+    {
+        errorf("icmp_init() failed.");
         return -1;
     }
 
