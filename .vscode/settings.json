@@ -8,6 +8,8 @@
         "pthread.h": "c",
         "pthreadtypes.h": "c",
         "stdio.h": "c",
-        "stdint.h": "c"
+        "stdint.h": "c",
+        "ether.h": "c",
+        "ether_tap.h": "c"
     },
 }
